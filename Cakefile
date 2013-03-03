@@ -2,10 +2,17 @@
 {spawn} = require 'child_process'
 fs = require 'fs'
 
-task "build", "watch and build the source", ->
-  compiler = spawn 'coffee', ['-cw', '.']
+buildOrWatch = (watch) ->
+  flags = if watch then '-cw' else '-c'
+  compiler = spawn 'coffee', [flags, '.']
   compiler.stdout.on 'data', (data) -> console.log data.toString().trim()
   compiler.stderr.on 'data', (data) -> console.error data.toString().trim()
+
+task "build", "build the source", ->
+  buildOrWatch false
+
+task "watch", "watch and build the source", ->
+  buildOrWatch true
 
 # Until GitHub has proper Literate CoffeeScript highlighting support, let's
 # manually futz the README ourselves.

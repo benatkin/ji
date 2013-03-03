@@ -14,6 +14,7 @@ events when a JSON document is read, and when it's finished reading documents.
 ```coffeescript
 {EventEmitter} = require 'events'
 fs = require 'fs'
+querystring = require 'querystring'
 
 class Reader extends EventEmitter
 ```
@@ -56,6 +57,38 @@ Read data from a stream. At present only one document per stream is permitted.
       document = JSON.parse(data)
       @emit 'data', name, document
 ```
+Selecting Nodes
+---------------
+
+[JSON Pointer][json-pointer] is used for selecting nodes. It uses the same
+syntax as URLs. This differs from the spec in that you're allowed to omit the
+leading slash ('/').
+```coffeescript
+class Pointer
+```
+To decode, split a string on slashes and unescape each component.
+```coffeescript
+  @decode: (path) ->
+    (querystring.unescape(component) for component in path.split '/')
+```
+To encode, escape each component and join it with a slash.
+```coffeescript
+  @encode: (components) ->
+    escaped = (querystring.escape(component) for component in components)
+    escaped.join '/'
+```
+Get a value at a jsonpointer path.
+```coffeescript
+  @get: (document, path) ->
+    value = document
+    components = Pointer.decode path
+    for component in components
+      if typeof value == 'object' and value != null
+        value = value[component]
+      else
+        value = undefined
+    value
+```
 Printing Data
 -------------
 ```coffeescript
@@ -85,11 +118,11 @@ use a parameter; all other options will.
   options:
     path:
       short: 'p'
-    replace:
-      short: 'r'
-    flat:
-      short: 'f'
-      boolean: true
+    #replace:
+    #  short: 'r'
+    #flat:
+    #  short: 'f'
+    #  boolean: true
 ```
 Build the options into a more searchable format.
 ```coffeescript
@@ -105,14 +138,33 @@ Parse the arguments using the options table. Make a lookup table for short
 options.
 ```coffeescript
   parse: (argv) ->
-    @filenames = argv.slice(2)
+    args = argv.slice(2)
+    @filenames = []
+    i = 0
+    while i < args.length
+      if /^-/.test(args[i])
+        option = @_options[args[i][1]]
+        @exitWithError 'unrecognized option: ' + args[i] unless option
+        if option.boolean
+          @[option.name] = true
+        else
+          if typeof args[i+1] == 'undefined'
+            @exitWithError 'value required for option ' + args[i]
+          @[option.name] = args[i+1]
+          i += 1
+      else
+        @filenames.push args[i]
+      i += 1
 ```
 Parse the options and execute the command.
 ```coffeescript
   run: ->
     @parse process.argv
     @reader.on 'data', (name, document) =>
-      @printer.print document
+      value = document
+      if @path
+        value = Pointer.get document, @path
+      @printer.print value unless typeof value == 'undefined'
     if @filenames.length > 0
       @reader.readFiles @filenames
     else
@@ -121,7 +173,7 @@ Parse the options and execute the command.
 Display errors.
 ```coffeescript
   showError: (message) ->
-    console.error 'Error: ' + message
+    console.error 'error: ' + message
 
   exitWithError: (message) ->
     @showError message
@@ -136,9 +188,8 @@ unless module.parent
 Export the classes.
 ```coffeescript
 exports.Reader = Reader
+exports.Pointer = Pointer
 exports.Printer = Printer
 exports.Program = Program
 ```
-[JSON Pointer][json-pointer] is used for addressing a node.
-
   [json-pointer]: http://datatracker.ietf.org/doc/draft-ietf-appsawg-json-pointer/
